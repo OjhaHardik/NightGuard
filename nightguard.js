@@ -7,7 +7,8 @@ const { ChannelType, PermissionsBitField } = require("discord.js");
 
 const { CATEGORY_IDS, CATEGORY_ID, EXCLUDE_CATEGORY_IDS } = process.env;
 
-const parseIds = value => (value || "").split(",").map(id => id.replace(/["'\s]/g, "")).filter(Boolean);
+// IDs may be separated by commas, spaces or new lines
+const parseIds = value => (value || "").replace(/["']/g, "").split(/[\s,]+/).filter(Boolean);
 
 // "all" = every channel in the server; otherwise a comma-separated list of IDs
 const categorySetting = (CATEGORY_IDS || CATEGORY_ID || "all").trim();
