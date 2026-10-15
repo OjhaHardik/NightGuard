@@ -7,9 +7,9 @@ const { ChannelType, PermissionsBitField } = require("discord.js");
 
 const { CATEGORY_IDS, CATEGORY_ID, EXCLUDE_CATEGORY_IDS } = process.env;
 
-const parseIds = value => (value || "").split(",").map(id => id.trim()).filter(Boolean);
+const parseIds = value => (value || "").split(",").map(id => id.replace(/["'\s]/g, "")).filter(Boolean);
 
-// "all" = every category in the server; otherwise a comma-separated list of IDs
+// "all" = every channel in the server; otherwise a comma-separated list of IDs
 const categorySetting = (CATEGORY_IDS || CATEGORY_ID || "all").trim();
 const excludedIds = new Set(parseIds(EXCLUDE_CATEGORY_IDS));
 
@@ -31,26 +31,44 @@ function clearState() {
 }
 
 function isNightModeOn() {
-    return loadState() !== null;
+    const state = loadState();
+    return state !== null && Object.keys(state).length > 0;
 }
 
-async function getTargetCategories(guild) {
-    const channels = await guild.channels.fetch();
-    const categories = channels.filter(channel => channel?.type === ChannelType.GuildCategory);
-
-    const wanted = categorySetting.toLowerCase() === "all"
-        ? categories
-        : categories.filter(category => parseIds(categorySetting).includes(category.id));
-
-    return { channels, categories: wanted.filter(category => !excludedIds.has(category.id)) };
-}
-
-// The categories plus every channel inside them. Child channels keep their own permission
-// overwrites, so hiding only the category does not hide them.
+// The chosen categories plus every channel inside them (child channels keep their own
+// permission overwrites, so hiding only the category does not hide them).
+// With "all", channels that are not in any category are included too.
 async function getTargetChannels(guild) {
-    const { channels, categories } = await getTargetCategories(guild);
-    const children = channels.filter(channel => channel && categories.has(channel.parentId));
-    return [...categories.values(), ...children.values()];
+    const channels = (await guild.channels.fetch()).filter(Boolean);
+    const isAll = categorySetting.replace(/["']/g, "").toLowerCase() === "all";
+    const wantedIds = new Set(parseIds(categorySetting));
+
+    const categories = channels.filter(channel =>
+        channel.type === ChannelType.GuildCategory &&
+        (isAll || wantedIds.has(channel.id)) &&
+        !excludedIds.has(channel.id)
+    );
+    const others = channels.filter(channel =>
+        channel.type !== ChannelType.GuildCategory &&
+        (isAll || categories.has(channel.parentId)) &&
+        !excludedIds.has(channel.id) &&
+        !excludedIds.has(channel.parentId)
+    );
+
+    const categoryCount = channels.filter(channel => channel.type === ChannelType.GuildCategory).size;
+    console.log(
+        `Server has ${channels.size} channels (${categoryCount} categories). ` +
+        `CATEGORY_IDS="${categorySetting}" matched ${categories.size} categories, ${others.size} channels`
+    );
+
+    const targets = [...categories.values(), ...others.values()];
+    if (targets.length === 0) {
+        throw new Error(
+            `Nothing to hide — CATEGORY_IDS="${categorySetting}" matched no channels. ` +
+            'Set it to all, or to category IDs separated by commas (no quotes or names).'
+        );
+    }
+    return targets;
 }
 
 function getViewState(channel, everyoneId) {
@@ -93,7 +111,8 @@ async function setNightMode(guild, on) {
     }
 
     const state = loadState();
-    if (!state) {
+    if (!isNightModeOn()) {
+        clearState();
         console.log("Night Mode already OFF — skipping");
         return { count: 0, failed: 0 };
     }
