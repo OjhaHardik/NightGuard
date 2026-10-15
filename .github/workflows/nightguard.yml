@@ -1,0 +1,74 @@
+name: NightGuard
+
+on:
+  # GitHub cron is always UTC (IST = UTC+5:30) and usually starts a few minutes late.
+  # The second run of each pair is a backup in case GitHub skips the first;
+  # if the first already worked, the backup does nothing.
+  schedule:
+    - cron: "30 19 * * *" # 1:00 AM IST → hide
+    - cron: "50 19 * * *" # 1:20 AM IST → hide (backup)
+    - cron: "30 3 * * *"  # 9:00 AM IST → show
+    - cron: "50 3 * * *"  # 9:20 AM IST → show (backup)
+
+  # "Run workflow" button in the Actions tab to close/open the server by hand
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "hide (close server) or show (open server)"
+        required: true
+        type: choice
+        options:
+          - hide
+          - show
+
+# Never run two at once — they share the saved state file
+concurrency:
+  group: nightguard
+  cancel-in-progress: false
+
+permissions:
+  contents: write # to commit nightguard-state.json
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ACTION: ${{ inputs.action || (contains(github.event.schedule, ' 19 ') && 'hide' || 'show') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Hide or show channels
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          GUILD_ID: ${{ vars.GUILD_ID }}
+          CATEGORY_IDS: ${{ vars.CATEGORY_IDS }}
+          EXCLUDE_CATEGORY_IDS: ${{ vars.EXCLUDE_CATEGORY_IDS }}
+        run: node run.js "$ACTION"
+
+      # Save the original permissions so the morning run can restore them.
+      # Runs even if some channels failed, so nothing hidden is forgotten.
+      - name: Save state
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -f nightguard-state.json ]; then
+            git add -f nightguard-state.json
+          else
+            git rm --cached --quiet --ignore-unmatch nightguard-state.json
+          fi
+          if git diff --cached --quiet; then
+            echo "State unchanged"
+          else
+            git commit -m "NightGuard state: $ACTION"
+            git pull --rebase origin "$GITHUB_REF_NAME"
+            git push origin HEAD:"$GITHUB_REF_NAME"
+          fi

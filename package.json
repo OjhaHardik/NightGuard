@@ -1,15 +1,14 @@
 {
   "name": "discord-nightguard",
   "version": "1.0.0",
-  "description": "Discord bot that hides/shows a category of channels on a schedule",
-  "main": "index.js",
+  "description": "Hides Discord categories at night and restores them in the morning, run by GitHub Actions",
+  "main": "run.js",
   "scripts": {
-    "start": "node index.js",
-    "deploy": "node deploy-commands.js"
+    "hide": "node run.js hide",
+    "show": "node run.js show"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5",
-    "node-cron": "^3.0.3"
+    "dotenv": "^16.4.5"
   }
 }
