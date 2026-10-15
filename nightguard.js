@@ -106,9 +106,26 @@ async function setNightMode(guild, on) {
                 console.error(`Failed to hide #${channel.name}:`, error.message);
             }
         }
+        const hidden = targets.length - failed;
 
-        console.log(`Night Mode ON — ${targets.length - failed} channels hidden, ${failed} failed`);
-        return { count: targets.length - failed, failed };
+        // Kick people out of the hidden voice channels. Done after hiding so nobody can rejoin;
+        // anyone who can still see the channel (admins, roles with access) stays connected.
+        const targetIds = new Set(targets.map(channel => channel.id));
+        let disconnected = 0;
+        for (const voiceState of guild.voiceStates.cache.values()) {
+            if (!targetIds.has(voiceState.channelId) || !voiceState.member) continue;
+            if (voiceState.channel.permissionsFor(voiceState.member).has(PermissionsBitField.Flags.ViewChannel)) continue;
+            try {
+                await voiceState.disconnect();
+                disconnected++;
+            } catch (error) {
+                failed++;
+                console.error(`Failed to disconnect ${voiceState.member.user.tag}:`, error.message);
+            }
+        }
+
+        console.log(`Night Mode ON — ${hidden} channels hidden, ${disconnected} disconnected from voice, ${failed} failed`);
+        return { count: hidden, failed };
     }
 
     const state = loadState();

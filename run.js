@@ -15,7 +15,8 @@ if (action !== "hide" && action !== "show") {
 }
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    // GuildVoiceStates: to see who is in voice channels at closing time
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates]
 });
 
 client.once("clientReady", async () => {
